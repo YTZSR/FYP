@@ -1,0 +1,71 @@
+Prometheus Application
+
+Command:
+    Prometheus: ./prometheus
+    Node exporter: ./node_exporter
+    Grafana: ./bin/grafana-server
+
+data model:
+    metric name: general feature
+        Metric types(not used on prometheus server yet, but used in client API):
+            Counter: 累积叠加，只可增加或重置为0
+            Gauge(计量器): 可任意加减的数值，通常为测量值。也可用于计数
+            Histogram(柱状图)： e.g. durations, size => 对应一个base name
+                counter: <basename>_bucket{...}
+                sum: <basename>_sum {...}
+                counts of event: <basename>_bucket{...}
+            Summary(similar with histogram)
+    labels(key/value optional)
+    (Notation表示: <metric name>{<label name>=<label value>, ...})
+
+Components:
+    main Prometheus Server: 抓取&存储 TSD
+        从Pushgateway（短期，间接）和其他exporter（长期，直接）提取metrics
+        alert: to AlertManager
+        Query: PromQL(WebUI, Grafana), etc.
+
+    client library: 放在客户端代码内部的库（调用Prometheus）
+    push gateway: 写入(短期任务，管理连接)
+    exporter: 外部API
+
+    instance: an endpoint
+    job: a collection of instances
+    (当Prometheus 读取数据时会自动加入一些标签，e.g. job, instance用于分辨定位)
+
+Advantages:
+    Work well for purely numeric TSD
+    machine-centric monitoring & monitoring of highly dynamic service-oriented architectures
+    support for multi-dimensional data collection(multi labels)
+    Better in Query
+    High Relibility, Standalone Server
+
+Disadvantages: accuracy
+
+PromQL语法：
+    expression data type: 
+        instant vector: 同一时间下不同TSD的值
+        range vector: 在一定范围内不同TSD的值
+        scalar: a simple numeric floating point
+
+    selector:
+        instant vector selector: 在某一个时间点的对应TSD的值（点筛选）
+            filter: "=", "!=", "=~"(regex-match, 正则表达式匹配)，"!~"
+            label "__name__" = <metric_name>, 当metric name 与keyword(on, bool, ignoring, group_left, group_right) 相同时可用label筛选
+            e.g. http_request_total 所有TSD中metric名为此的数据
+                 http_requests_total{job="prometheus",group="canary"} (label filter)
+                 http_requests_total{environment=~"staging|testing|development",method!="GET"}
+        range vector selector: 在某一个时间范围内的TSD的值
+            在grammer 最后加入[<time>], 可用s,m,h,d,w,y
+            e.g. http_requests_total{job="prometheus"}[5m]
+        offset modifier: allows changing the time offset for individual instant and range vectors in a query.
+
+    search: (all need time when given a value)
+        promhttp_metric_handler_requests_total  (name)
+        promhttp_metric_handler_requests_total{code="200"}   (name {lables & value})
+        rate(promhttp_metric_handler_requests_total{code="200"}[1m]) 比例
+    query key: name, lables, time
+绘图时便会根据所有时间点的数据进行串联
+
+Adding database: set name and address configs in prometheus.yml
+
+Grafana: 可读取promethues 的数据，利用不同dashboard 的模板以及对应的query 进行可视化管理
