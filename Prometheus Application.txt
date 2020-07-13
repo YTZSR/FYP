@@ -58,6 +58,14 @@ PromQL语法：
             在grammer 最后加入[<time>], 可用s,m,h,d,w,y
             e.g. http_requests_total{job="prometheus"}[5m]
         offset modifier: allows changing the time offset for individual instant and range vectors in a query.
+    
+    operators: 
+        arithmetic binary operators: +, -, *, /, %, ^
+        comparison binary opeartors: ==, !=, >, <, >=, <=
+        logical/set binary operators: and, or, unless
+
+        vector matching:
+            one-to-one: //TODO
 
     search: (all need time when given a value)
         promhttp_metric_handler_requests_total  (name)
