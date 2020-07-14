@@ -60,12 +60,50 @@ PromQL语法：
         offset modifier: allows changing the time offset for individual instant and range vectors in a query.
     
     operators: 
-        arithmetic binary operators: +, -, *, /, %, ^
-        comparison binary opeartors: ==, !=, >, <, >=, <=
-        logical/set binary operators: and, or, unless
+        binary operators:
+            arithmetic binary operators: +, -, *, /, %, ^
+            comparison binary opeartors: ==, !=, >, <, >=, <=
+            logical/set binary operators: and, or, unless
 
-        vector matching:
-            one-to-one: //TODO
+            precedence 优先级:
+                1. ^
+                2. *, /, %
+                3. +, -
+                4. ==, !=, <=, <, >=, >
+                5. and, unless
+                6. or 
+
+        vector matching: find a matching element in the right-hand side vector for each entry in the left-hand side
+                        (从左侧提取record, 根据条件在右侧寻找匹配项)
+            one-to-one: find a unique pair of entries
+                <vector expr> <binary-op> ignoring(<label list>) <vector expr>
+                <vector expr> <binary-op> on(<label list>) <vector expr>
+                igonring: 忽略对应的label的限制
+                on: 只在这之中的label进行限制
+            
+            many-to-one/one-to-many: (binary opeartors here are just arthmetic & comparison operators)
+                <vector expr> <bin-op> ignoring/on(<label list>) group_left(<label list>) <vector expr>
+                <vector expr> <bin-op> ignoring/on(<label list>) group_right(<label list>) <vector expr>
+                (决定以左侧还是右侧为准进行分组，顺序会不同)
+                e.g. method_code:http_errors:rate5m / ignoring(code) group_left method:http_requests:rate5m
+                    output  {method="get", code="500"}  0.04            
+                            {method="get", code="404"}  0.05            
+                            {method="post", code="500"} 0.05            
+                            {method="post", code="404"} 0.175           
+        
+        aggregation operators: 
+            sum, min, max, avg, count
+            stddev: calculate population standard deviation over dimensions 标准差
+            stdvar: calculate population standard variance over dimensions 方差
+            count_values(para): # of elements with same value
+            topk/bottomk(para): largest/smallest k elements by sample value
+            quantile(para): calculate φ-quantile (0 ≤ φ ≤ 1) over dimensions 分位数， 在总体排名某百分比的值
+
+            <aggr-op> [without|by (<label list>)] ([parameter,] <vector expression>)
+         or <aggr-op>([parameter,] <vector expression>) [without|by (<label list>)]
+            e.g sum without (instance) (http_requests_total)
+                count_values("version", build_version)
+                topk(5, http_requests_total)
 
     search: (all need time when given a value)
         promhttp_metric_handler_requests_total  (name)
