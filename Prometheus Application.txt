@@ -115,3 +115,14 @@ PromQL语法：
 Adding database: set name and address configs in prometheus.yml
 
 Grafana: 可读取promethues 的数据，利用不同dashboard 的模板以及对应的query 进行可视化管理
+ 
+
+Links:
+1. Bufio.Writer: https://books.studygolang.com/The-Golang-Standard-Library-by-Example/chapter01/01.4.html
+2. Hash Function: https://zhuanlan.zhihu.com/p/38411551
+3. GO Language: https://draveness.me/golang/
+4. GO function vs method: https://www.flysnow.org/2017/03/31/go-in-action-go-method.html
+5. Big Endian: https://songlee24.github.io/2015/05/02/endianess/
+
+Questions:
+1. go sync
