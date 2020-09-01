@@ -62,7 +62,7 @@ func (cm *Meta) writeHash(h hash.Hash, buf []byte) error {
 	if _, err := h.Write(buf[:1]); err != nil {      //把chunk加密编码写入哈希 -> 校验
 		return err
 	}
-	if _, err := h.Write(cm.Chunk.Bytes()); err != nil { // chunk原始值（转为字节）写入哈希
+	if _, err := h.Write(cm.Chunk.Bytes()); err != nil { // chunk data写入哈希
 		return err
 	}
 	return nil
@@ -78,7 +78,7 @@ var (
 	errInvalidSize = fmt.Errorf("invalid size") //报错并显示信息
 )
 
-var castagnoliTable *crc32.Table // 哈希函数，用于数据校验
+var castagnoliTable *crc32.Table // 哈希函数，用于数据校验, 赋予类型
 
 func init() {
 	castagnoliTable = crc32.MakeTable(crc32.Castagnoli) //表的初始化
@@ -93,8 +93,8 @@ func newCRC32() hash.Hash32 {
 // Writer implements the ChunkWriter interface for the standard
 // serialization format.
 type Writer struct {
-	dirFile *os.File      //文件夹地址
-	files   []*os.File    //所有文件地址
+	dirFile *os.File      //文件夹地址, File IO
+	files   []*os.File    //所有文件地址, FIle IO
 	wbuf    *bufio.Writer //缓存IO，可先记录数据到这里面
 	n       int64
 	crc32   hash.Hash //用于表数据的校验
@@ -117,10 +117,10 @@ func NewWriter(dir string) (*Writer, error) { //初始化writer, dir为路径
 		return nil, err
 	}
 	cw := &Writer{
-		dirFile:     dirFile,
+		dirFile:     dirFile, // 文件夹地址， FIle IO
 		n:           0,
-		crc32:       newCRC32(),
-		segmentSize: defaultChunkSegmentSize,
+		crc32:       newCRC32(),              //初始化Hash Table
+		segmentSize: defaultChunkSegmentSize, // 512MB
 	}
 	return cw, nil
 }
@@ -135,15 +135,15 @@ func (w *Writer) tail() *os.File {
 // finalizeTail writes all pending data to the current tail file,
 // truncates its size, and closes it.
 func (w *Writer) finalizeTail() error { //一个bufio里可储存一个chunk的数据，录入完毕后统一放入Writer的最后文件地址
-	tf := w.tail() //找到写入地址
+	tf := w.tail() //找到写入地址， File IO
 	if tf == nil {
 		return nil
 	}
 
-	if err := w.wbuf.Flush(); err != nil { //把缓存中所有数据写入Writer.tail
+	if err := w.wbuf.Flush(); err != nil { //把缓存中所有数据写入最底层 io.Writer
 		return err
 	}
-	if err := tf.Sync(); err != nil {
+	if err := tf.Sync(); err != nil { //把io.Writer 的内容同步到文件地址
 		return err
 	}
 	// As the file was pre-allocated, we truncate any superfluous zero bytes.
@@ -155,10 +155,10 @@ func (w *Writer) finalizeTail() error { //一个bufio里可储存一个chunk的�
 		return err
 	}
 
-	return tf.Close() //关闭文件写入
+	return tf.Close() //关闭文件写入， 尾部chunk写入完毕
 }
 
-func (w *Writer) cut() error {
+func (w *Writer) cut() error { //结束本个segment, 直接收尾
 	// Sync current tail to disk and close.
 	if err := w.finalizeTail(); err != nil { // 把缓存中数据写入Writer
 		return err
@@ -180,97 +180,98 @@ func (w *Writer) cut() error {
 	}
 
 	// Write header metadata for new file.
-	metab := make([]byte, 8)                                         //8个字节空间
+	metab := make([]byte, 8)                                         //8个字节空间， slice
 	binary.BigEndian.PutUint32(metab[:MagicChunksSize], MagicChunks) //前四个写入magicChunks
 	metab[4] = chunksFormatV1
 
-	if _, err := f.Write(metab); err != nil { //写入header
+	if _, err := f.Write(metab); err != nil { //写入header 8个字节
 		return err
 	}
 
-	w.files = append(w.files, f)
+	w.files = append(w.files, f) //新的segment的header放到上一个segment的files的后面，并且更新新的files地址
 	if w.wbuf != nil {
 		w.wbuf.Reset(f)
 	} else {
 		w.wbuf = bufio.NewWriterSize(f, 8*1024*1024)
 	}
-	w.n = 8
+	w.n = 8 //mata 的大小
 
 	return nil
 }
 
-func (w *Writer) write(b []byte) error {
+func (w *Writer) write(b []byte) error { // 写入bufio.writer
 	n, err := w.wbuf.Write(b)
-	w.n += int64(n)
+	w.n += int64(n) //长度增加
 	return err
 }
 
 // MergeOverlappingChunks removes the samples whose timestamp is overlapping.
 // The last appearing sample is retained in case there is overlapping.
-// This assumes that `chks []Meta` is sorted w.r.t. MinTime.
+// This assumes that `chks []Meta` is sorted w.r.t. MinTime. chunk默认以最小时间排序
 func MergeOverlappingChunks(chks []Meta) ([]Meta, error) {
 	if len(chks) < 2 { // 只有一个chunk
 		return chks, nil
 	}
-	newChks := make([]Meta, 0, len(chks)) // Will contain the merged chunks.
-	newChks = append(newChks, chks[0])
+	newChks := make([]Meta, 0, len(chks)) // Will contain the merged chunks. (type,len,cap)
+	newChks = append(newChks, chks[0])    // 切片放入第一个meta
 	last := 0
 	for _, c := range chks[1:] {
 		// We need to check only the last chunk in newChks.
-		// Reason: (1) newChks[last-1].MaxTime < newChks[last].MinTime (non overlapping)
+		// Reason: (1) newChks[last-1].MaxTime < newChks[last].MinTime (non overlapping) 因为按照时间录入
 		//         (2) As chks are sorted w.r.t. MinTime, newChks[last].MinTime < c.MinTime.
 		// So never overlaps with newChks[last-1] or anything before that.
-		if c.MinTime > newChks[last].MaxTime {
+		if c.MinTime > newChks[last].MaxTime { //c的最小时间大于最后一个的最大时间，所以要放到最后 （正常）
 			newChks = append(newChks, c)
 			last++
 			continue
 		}
-		nc := &newChks[last]
-		if c.MaxTime > nc.MaxTime {
+		//最小时间小于最后一个的最大时间，非正常，需要合并
+		nc := &newChks[last]        //最后一个chunk的地址
+		if c.MaxTime > nc.MaxTime { //更新最大时间
 			nc.MaxTime = c.MaxTime
 		}
-		chk, err := MergeChunks(nc.Chunk, c.Chunk)
+		chk, err := MergeChunks(nc.Chunk, c.Chunk) //两者合并
 		if err != nil {
 			return nil, err
 		}
-		nc.Chunk = chk
+		nc.Chunk = chk //更新最后一个chunk
 	}
 
 	return newChks, nil
 }
 
 // MergeChunks vertically merges a and b, i.e., if there is any sample
-// with same timestamp in both a and b, the sample in a is discarded.
+// with same timestamp in both a and b, the sample in a is discarded. 例子时间戳相同
 func MergeChunks(a, b chunkenc.Chunk) (*chunkenc.XORChunk, error) {
 	newChunk := chunkenc.NewXORChunk()
-	app, err := newChunk.Appender()
+	app, err := newChunk.Appender() //把sample加到chunk中
 	if err != nil {
 		return nil, err
 	}
-	ait := a.Iterator(nil)
+	ait := a.Iterator(nil) //迭代器，只能提取下一项的值
 	bit := b.Iterator(nil)
-	aok, bok := ait.Next(), bit.Next()
-	for aok && bok {
-		at, av := ait.At()
+	aok, bok := ait.Next(), bit.Next() //迭代器的第一项
+	for aok && bok {                   // 两者均未到最后
+		at, av := ait.At() //此时迭代器对应的值
 		bt, bv := bit.At()
-		if at < bt {
-			app.Append(at, av)
+		if at < bt { // a在b之前
+			app.Append(at, av) //写入a
 			aok = ait.Next()
 		} else if bt < at {
 			app.Append(bt, bv)
 			bok = bit.Next()
-		} else {
-			app.Append(bt, bv)
+		} else { // 两者时间相同
+			app.Append(bt, bv) //写入b中的sample
 			aok = ait.Next()
 			bok = bit.Next()
 		}
 	}
-	for aok {
+	for aok { //a仍有剩余
 		at, av := ait.At()
 		app.Append(at, av)
 		aok = ait.Next()
 	}
-	for bok {
+	for bok { //b仍有剩余
 		bt, bv := bit.At()
 		app.Append(bt, bv)
 		bok = bit.Next()
@@ -284,11 +285,11 @@ func MergeChunks(a, b chunkenc.Chunk) (*chunkenc.XORChunk, error) {
 	return newChunk, nil
 }
 
-func (w *Writer) WriteChunks(chks ...Meta) error {
+func (w *Writer) WriteChunks(chks ...Meta) error { // chunks 写入
 	// Calculate maximum space we need and cut a new segment in case
 	// we don't fit into the current one.
-	maxLen := int64(binary.MaxVarintLen32) // The number of chunks.
-	for _, c := range chks {
+	maxLen := int64(binary.MaxVarintLen32) // The number of chunks. 多的数字用来记录chunk的数量?
+	for _, c := range chks {               //每一个chunk所占大小
 		maxLen += binary.MaxVarintLen32 + 1 // The number of bytes in the chunk and its encoding.
 		maxLen += int64(len(c.Chunk.Bytes()))
 		maxLen += 4 // The 4 bytes of crc32
@@ -296,12 +297,12 @@ func (w *Writer) WriteChunks(chks ...Meta) error {
 	newsz := w.n + maxLen
 
 	if w.wbuf == nil || newsz > w.segmentSize && maxLen <= w.segmentSize {
-		if err := w.cut(); err != nil {
+		if err := w.cut(); err != nil { // 不录入这一组chunk, 直接收尾本个segment
 			return err
 		}
 	}
 
-	var seq = uint64(w.seq()) << 32
+	var seq = uint64(w.seq()) << 32 //只用与ref ?
 	for i := range chks {
 		chk := &chks[i]
 
@@ -309,22 +310,22 @@ func (w *Writer) WriteChunks(chks ...Meta) error {
 
 		n := binary.PutUvarint(w.buf[:], uint64(len(chk.Chunk.Bytes())))
 
-		if err := w.write(w.buf[:n]); err != nil {
+		if err := w.write(w.buf[:n]); err != nil { //写len入缓存IO
 			return err
 		}
 		w.buf[0] = byte(chk.Chunk.Encoding())
-		if err := w.write(w.buf[:1]); err != nil {
+		if err := w.write(w.buf[:1]); err != nil { //写encoding入缓存IO
 			return err
 		}
-		if err := w.write(chk.Chunk.Bytes()); err != nil {
+		if err := w.write(chk.Chunk.Bytes()); err != nil { //写data入缓存IO
 			return err
 		}
 
 		w.crc32.Reset()
-		if err := chk.writeHash(w.crc32, w.buf[:]); err != nil {
+		if err := chk.writeHash(w.crc32, w.buf[:]); err != nil { //把encoding 和data写入hash
 			return err
 		}
-		if err := w.write(w.crc32.Sum(w.buf[:0])); err != nil {
+		if err := w.write(w.crc32.Sum(w.buf[:0])); err != nil { //导出对应的crc32 并写入buf
 			return err
 		}
 	}
@@ -342,7 +343,7 @@ func (w *Writer) Close() error {
 	}
 
 	// close dir file (if not windows platform will fail on rename)
-	return w.dirFile.Close()
+	return w.dirFile.Close() //关闭文件夹的FileIO
 }
 
 // ByteSlice abstracts a byte slice.
@@ -351,7 +352,7 @@ type ByteSlice interface {
 	Range(start, end int) []byte
 }
 
-type realByteSlice []byte
+type realByteSlice []byte // ByteSlice 的 实例化
 
 func (b realByteSlice) Len() int {
 	return len(b)

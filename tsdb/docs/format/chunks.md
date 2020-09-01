@@ -9,7 +9,7 @@ in-file offset (lower 4 bytes) and segment sequence number (upper 4 bytes).
 
 ```
 ┌────────────────────────────┬─────────────────────┐
-│ magic(0x85BD40DD) <4 byte> │ version(1) <1 byte> │
+│ magic(0x85BD40DD) <4 byte> │ version(1) <1 byte> │  Meta
 ├────────────────────────────┴─────────────────────┤
 │ ┌──────────────────────────────────────────────┐ │
 │ │                   Chunk 1                    │ │

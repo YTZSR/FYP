@@ -1,3 +1,5 @@
+label <-> series -> data
+
 # Index Disk Format
 
 The following describes the format of the `index` file found in each block directory.
@@ -38,7 +40,8 @@ When the index is written, an arbitrary number of padding bytes may be added bet
 Most of the sections described below start with a `len` field. It always specifies the number of bytes just before the trailing CRC32 checksum. The checksum is always calculated over those `len` bytes.
 
 
-### Symbol Table
+### Symbol Table(label name & value) 
+所有出现过的label 的名字和值(pair)， 每个均有唯一ID（即顺序索引），存储时只需记录ID
 
 The symbol table holds a sorted list of deduplicated strings that occurred in label pairs of the stored series. They can be referenced from subsequent sections and significantly reduce the total index size.
 
@@ -62,7 +65,10 @@ Strings are referenced by sequential indexing. The strings are sorted in lexicog
 ```
 
 
-### Series
+### Series(series -> label name & data)
+当前block有哪些series(名字)以及对应有哪些label（ID），数据在哪些chunk中
+content： label数量，所有label在symbol table中的索引ID，chunks数量， 每个chunk有sample的时间范围，对应的ref
+ID都固定为 `offset/16`
 
 The section contains a sequence of series that hold the label set of the series as well as its chunks within the block. The series are sorted lexicographically by their label sets.  
 Each series section is aligned to 16 bytes. The ID for a series is the `offset/16`. This serves as the series' ID in all subsequent references. Thereby, a sorted list of series IDs implies a lexicographically sorted list of series label sets. 
@@ -70,7 +76,7 @@ Each series section is aligned to 16 bytes. The ID for a series is the `offset/1
 ```
 ┌───────────────────────────────────────┐
 │ ┌───────────────────────────────────┐ │
-│ │   series_1                        │ │
+│ │   series_1                        │ │ data对应的label可以从这里找到
 │ ├───────────────────────────────────┤ │
 │ │                 . . .             │ │
 │ ├───────────────────────────────────┤ │
@@ -123,8 +129,9 @@ After the labels, the number of indexed chunks is encoded, followed by a sequenc
 
 
 
-### Label Index
-
+### Label Index (label name -> label value)
+对label的值进行索引
+label name总数， entries总数*(record总数， 为label的值)
 A label index section indexes the existing (combined) values for one or more label names.
 The `#names` field determines the number of indexed label names, followed by the total number of entries in the `#entries` field. The body holds #entries / #names tuples of symbol table references, each tuple being of #names length. The value tuples are sorted in lexicographically increasing order.
 
@@ -156,7 +163,7 @@ For instance, a single label name with 4 different values will be encoded as:
 The sequence of label index sections is finalized by a [label offset table](#label-offset-table) containing label offset entries that points to the beginning of each label index section for a given label name.
 
 ### Postings
-
+从 posting offset table 来， 为某个label pair 所对应的series的ref， 目标为上方的series
 Postings sections store monotonically increasing lists of series references that contain a given label pair associated with the list.
 
 ```
@@ -177,8 +184,8 @@ Postings sections store monotonically increasing lists of series references that
 
 The sequence of postings sections is finalized by a [postings offset table](#postings-offset-table) containing postings offset entries that points to the beginning of each postings section for a given label pair.
 
-### Label Offset Table
-
+### Label Offset Table(label name -> label value)
+label name以及他们对应的value所在的地址，目标是上方的label index
 A label offset table stores a sequence of label offset entries.
 Every label offset entry holds the label name and the offset to its values in the label index section.
 They are used to track label index sections. They are read into memory when an index file is loaded.
@@ -201,8 +208,8 @@ They are used to track label index sections. They are read into memory when an i
 ```
 
 
-### Postings Offset Table
-
+### Postings Offset Table (label -> series)
+通过label pair找到对应的series位置，目标为posting
 A postings offset table stores a sequence of postings offset entries.
 Every postings offset entry holds the lable name/value pair and the offset to its series list in the postings section.
 They are used to track postings sections. They are read into memory when an index file is loaded.
@@ -228,7 +235,7 @@ They are used to track postings sections. They are read into memory when an inde
 
 
 ### TOC
-
+各个部分的起始地址
 The table of contents serves as an entry point to the entire index and points to various sections in the file.
 If a reference is zero, it indicates the respective section does not exist and empty results should be returned upon lookup.
 

@@ -1,0 +1,3 @@
+Series -> name 
+label -> name, value
+symbol -> label name
