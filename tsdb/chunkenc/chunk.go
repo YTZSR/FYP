@@ -20,8 +20,8 @@ import (
 	"github.com/pkg/errors"
 )
 
-// Encoding is the identifier for a chunk encoding.
-type Encoding uint8
+// Encoding is the identifier for a chunk encoding. 应该指种类
+type Encoding uint8 // 每一个chunk的标识码
 
 func (e Encoding) String() string {
 	switch e {
@@ -35,15 +35,15 @@ func (e Encoding) String() string {
 
 // The different available chunk encodings.
 const (
-	EncNone Encoding = iota
+	EncNone Encoding = iota // 从0开始计数
 	EncXOR
 )
 
 // Chunk holds a sequence of sample pairs that can be iterated over and appended to.
 type Chunk interface {
-	Bytes() []byte
+	Bytes() []byte //data
 	Encoding() Encoding
-	Appender() (Appender, error)
+	Appender() (Appender, error) //把data 放入的工具
 	// The iterator passed as argument is for re-use.
 	// Depending on implementation, the iterator can
 	// be re-used or a new iterator can be allocated.
@@ -70,18 +70,19 @@ func NewNopIterator() Iterator {
 
 type nopIterator struct{}
 
+//空iterator的返回值
 func (nopIterator) At() (int64, float64) { return 0, 0 }
 func (nopIterator) Next() bool           { return false }
 func (nopIterator) Err() error           { return nil }
 
-// Pool is used to create and reuse chunk references to avoid allocations.
+// Pool is used to create and reuse chunk references to avoid allocations. 重用已经赋予空间的chunk
 type Pool interface {
 	Put(Chunk) error
-	Get(e Encoding, b []byte) (Chunk, error)
+	Get(e Encoding, b []byte) (Chunk, error) //（种类， data）
 }
 
 // pool is a memory pool of chunk objects.
-type pool struct {
+type pool struct { //Pool 的实例化
 	xor sync.Pool
 }
 

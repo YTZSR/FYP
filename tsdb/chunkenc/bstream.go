@@ -46,13 +46,14 @@ import "io"
 // bstream is a stream of bits.
 type bstream struct {
 	stream []byte // the data stream
-	count  uint8  // how many bits are valid in current byte
+	count  uint8  // how many bits are valid in current byte, 当前字节有多少bit可用，0-8
 }
 
 func newBReader(b []byte) bstream {
 	return bstream{stream: b, count: 8}
 }
 
+//bstream getter
 func (b *bstream) bytes() []byte {
 	return b.stream
 }
@@ -64,53 +65,54 @@ const (
 	one  bit = true
 )
 
-func (b *bstream) writeBit(bit bit) {
+func (b *bstream) writeBit(bit bit) { //写入一个bit
 	if b.count == 0 {
-		b.stream = append(b.stream, 0)
+		b.stream = append(b.stream, 0) //把stream后新的一个完整字节全部变为0, 因为切片种类为byte， 所以0只有一个字节大小
 		b.count = 8
 	}
 
-	i := len(b.stream) - 1
+	i := len(b.stream) - 1 //最后一个字节的位置
 
-	if bit {
-		b.stream[i] |= 1 << (b.count - 1)
+	if bit { //如果bit为0则不需要更改
+		b.stream[i] |= 1 << (b.count - 1) //按位或后赋值， 放入1到具体位置
 	}
 
 	b.count--
 }
 
-func (b *bstream) writeByte(byt byte) {
+func (b *bstream) writeByte(byt byte) { //写入一个byte
 	if b.count == 0 {
-		b.stream = append(b.stream, 0)
+		b.stream = append(b.stream, 0) //把stream后新的一个完整字节全部变为0
 		b.count = 8
 	}
 
-	i := len(b.stream) - 1
+	i := len(b.stream) - 1 //最后一个字节的位置
 
 	// fill up b.b with b.count bits from byt
-	b.stream[i] |= byt >> (8 - b.count)
+	b.stream[i] |= byt >> (8 - b.count) //剩下b.count位放入剩余空的位置中
 
-	b.stream = append(b.stream, 0)
-	i++
-	b.stream[i] = byt << b.count
+	b.stream = append(b.stream, 0) //把stream后新的一个完整字节全部变为0
+	i++                            //调整最后的位置
+	b.stream[i] = byt << b.count   //加入的字节前几位为剩余的data，后面的则为空（0）
 }
 
-func (b *bstream) writeBits(u uint64, nbits int) {
-	u <<= (64 - uint(nbits))
-	for nbits >= 8 {
-		byt := byte(u >> 56)
+func (b *bstream) writeBits(u uint64, nbits int) { //写入多个bits
+	u <<= (64 - uint(nbits)) //	左移后赋值，把打他放到最左侧
+	for nbits >= 8 {         //需一个一个字节写入
+		byt := byte(u >> 56) //需写入的字节
 		b.writeByte(byt)
-		u <<= 8
+		u <<= 8 //移除写入的一个字节
 		nbits -= 8
 	}
 
 	for nbits > 0 {
-		b.writeBit((u >> 63) == 1)
-		u <<= 1
+		b.writeBit((u >> 63) == 1) //写入一个bit
+		u <<= 1                    //移除写入的bit
 		nbits--
 	}
 }
 
+//从头开始读，count记录第一字节剩余没有被阅读的bits，bit从byte最左边开始读取
 func (b *bstream) readBit() (bit, error) {
 	if len(b.stream) == 0 {
 		return false, io.EOF
@@ -125,7 +127,7 @@ func (b *bstream) readBit() (bit, error) {
 		b.count = 8
 	}
 
-	d := (b.stream[0] << (8 - b.count)) & 0x80
+	d := (b.stream[0] << (8 - b.count)) & 0x80 // 先移位，与1000 0000(uint)比较， 每一位比较均为1对应结果位数为1， 即只看第一位
 	b.count--
 	return d != 0, nil
 }
@@ -184,7 +186,7 @@ func (b *bstream) readBits(nbits int) (uint64, error) {
 	}
 
 	if nbits > int(b.count) {
-		u = (u << uint(b.count)) | uint64((b.stream[0]<<(8-b.count))>>(8-b.count))
+		u = (u << uint(b.count)) | uint64((b.stream[0]<<(8-b.count))>>(8-b.count)) //只选出b.count的位数并放到最后
 		nbits -= int(b.count)
 		b.stream = b.stream[1:]
 

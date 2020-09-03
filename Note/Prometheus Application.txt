@@ -125,4 +125,7 @@ Links:
 5. Big Endian: https://songlee24.github.io/2015/05/02/endianess/
 
 Questions:
-1. go sync
+1. chunks.go: maxLen为什么最开始要加入chunks的数量？虽然不会被存入硬盘但是在判断空间上会产生影响。
+2. chunks.go: seq的作用？ Ref的作用？
+3. bstream.go: 在读取的时候为何尾部的stream不能为空？
+4. 为何要把bstream 和 XORChunk 分开？

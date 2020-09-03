@@ -302,7 +302,7 @@ func (w *Writer) WriteChunks(chks ...Meta) error { // chunks 写入
 		}
 	}
 
-	var seq = uint64(w.seq()) << 32 //只用与ref ?
+	var seq = uint64(w.seq()) << 32 //只用于ref ?
 	for i := range chks {
 		chk := &chks[i]
 
