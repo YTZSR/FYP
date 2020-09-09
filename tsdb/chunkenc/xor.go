@@ -72,7 +72,7 @@ func (c *XORChunk) Bytes() []byte {
 
 // NumSamples returns the number of samples in the chunk.
 func (c *XORChunk) NumSamples() int {
-	return int(binary.BigEndian.Uint16(c.Bytes()))
+	return int(binary.BigEndian.Uint16(c.Bytes())) //  前两个字节记录数量?
 }
 
 // Appender implements the Chunk interface.
@@ -124,32 +124,33 @@ func (c *XORChunk) Iterator(it Iterator) Iterator {
 }
 
 type xorAppender struct {
-	b *bstream
+	b *bstream //写入用的stream
 
-	t      int64
-	v      float64
+	t      int64   // 时间
+	v      float64 // data value
 	tDelta uint64
 
 	leading  uint8
 	trailing uint8
 }
 
-func (a *xorAppender) Append(t int64, v float64) {
+func (a *xorAppender) Append(t int64, v float64) { // 先t后v
 	var tDelta uint64
 	num := binary.BigEndian.Uint16(a.b.bytes())
 
 	if num == 0 {
-		buf := make([]byte, binary.MaxVarintLen64)
+		buf := make([]byte, binary.MaxVarintLen64) //写入时间， 64位最多放入10个字节
 		for _, b := range buf[:binary.PutVarint(buf, t)] {
 			a.b.writeByte(b)
 		}
-		a.b.writeBits(math.Float64bits(v), 64)
+		a.b.writeBits(math.Float64bits(v), 64) //写入数据
 
 	} else if num == 1 {
-		tDelta = uint64(t - a.t)
+		tDelta = uint64(t - a.t) //与前一个的时间差
 
 		buf := make([]byte, binary.MaxVarintLen64)
-		for _, b := range buf[:binary.PutUvarint(buf, tDelta)] {
+		for _, b := range buf[:binary.PutUvarint(buf, tDelta)] { // 把t转换成字节形式， 每个字节用7bits记录数据，剩下一个用啦记录是否该字节有数据，
+			// 由低位字节往高位写
 			a.b.writeByte(b)
 		}
 
@@ -176,14 +177,14 @@ func (a *xorAppender) Append(t int64, v float64) {
 		default:
 			a.b.writeBits(0x0f, 4) // '1111'
 			a.b.writeBits(uint64(dod), 64)
-		}
+		} //记录时间差的差
 
 		a.writeVDelta(v)
 	}
 
 	a.t = t
 	a.v = v
-	binary.BigEndian.PutUint16(a.b.bytes(), num+1)
+	binary.BigEndian.PutUint16(a.b.bytes(), num+1) // 记录数量
 	a.tDelta = tDelta
 }
 
@@ -192,36 +193,36 @@ func bitRange(x int64, nbits uint8) bool {
 }
 
 func (a *xorAppender) writeVDelta(v float64) {
-	vDelta := math.Float64bits(v) ^ math.Float64bits(a.v)
+	vDelta := math.Float64bits(v) ^ math.Float64bits(a.v) //两者相异为1
 
 	if vDelta == 0 {
-		a.b.writeBit(zero)
+		a.b.writeBit(zero) //第一位代表是否与上一个数据有变化。相同则只有一个0
 		return
 	}
-	a.b.writeBit(one)
+	a.b.writeBit(one) // 数据有变化
 
-	leading := uint8(bits.LeadingZeros64(vDelta))
-	trailing := uint8(bits.TrailingZeros64(vDelta))
+	leading := uint8(bits.LeadingZeros64(vDelta))   //从头开始数有多少个连续0
+	trailing := uint8(bits.TrailingZeros64(vDelta)) //从尾开始数有多少个连续0
 
 	// Clamp number of leading zeros to avoid overflow when encoding.
 	if leading >= 32 {
-		leading = 31
+		leading = 31 //上限
 	}
 
 	if a.leading != 0xff && leading >= a.leading && trailing >= a.trailing {
-		a.b.writeBit(zero)
-		a.b.writeBits(vDelta>>a.trailing, 64-int(a.leading)-int(a.trailing))
+		a.b.writeBit(zero)                                                   // 与上一个数据相比变化更小
+		a.b.writeBits(vDelta>>a.trailing, 64-int(a.leading)-int(a.trailing)) // 利用之前的头尾数量去头去尾
 	} else {
 		a.leading, a.trailing = leading, trailing
 
-		a.b.writeBit(one)
-		a.b.writeBits(uint64(leading), 5)
+		a.b.writeBit(one)                 // 数据变化范围不同
+		a.b.writeBits(uint64(leading), 5) // 写入 leading为0 的位数
 
 		// Note that if leading == trailing == 0, then sigbits == 64.  But that value doesn't actually fit into the 6 bits we have.
 		// Luckily, we never need to encode 0 significant bits, since that would put us in the other case (vdelta == 0).
 		// So instead we write out a 0 and adjust it back to 64 on unpacking.
 		sigbits := 64 - leading - trailing
-		a.b.writeBits(uint64(sigbits), 6)
+		a.b.writeBits(uint64(sigbits), 6) //写入总位数
 		a.b.writeBits(vDelta>>trailing, int(sigbits))
 	}
 }
@@ -252,7 +253,7 @@ func (it *xorIterator) Err() error {
 func (it *xorIterator) Reset(b []byte) {
 	// The first 2 bytes contain chunk headers.
 	// We skip that for actual samples.
-	it.br = newBReader(b[2:])
+	it.br = newBReader(b[2:]) //前两个字节为总数
 	it.numTotal = binary.BigEndian.Uint16(b)
 
 	it.numRead = 0
@@ -270,12 +271,12 @@ func (it *xorIterator) Next() bool {
 	}
 
 	if it.numRead == 0 {
-		t, err := binary.ReadVarint(&it.br)
+		t, err := binary.ReadVarint(&it.br) //第一个的时间
 		if err != nil {
 			it.err = err
 			return false
 		}
-		v, err := it.br.readBits(64)
+		v, err := it.br.readBits(64) //第一个的data
 		if err != nil {
 			it.err = err
 			return false
@@ -287,7 +288,7 @@ func (it *xorIterator) Next() bool {
 		return true
 	}
 	if it.numRead == 1 {
-		tDelta, err := binary.ReadUvarint(&it.br)
+		tDelta, err := binary.ReadUvarint(&it.br) // 第一个时间差
 		if err != nil {
 			it.err = err
 			return false
@@ -312,9 +313,9 @@ func (it *xorIterator) Next() bool {
 		}
 		d |= 1
 	}
-	var sz uint8
+	var sz uint8 //size
 	var dod int64
-	switch d {
+	switch d { //判断时间差的差的范围
 	case 0x00:
 		// dod == 0
 	case 0x02:
@@ -346,8 +347,8 @@ func (it *xorIterator) Next() bool {
 		dod = int64(bits)
 	}
 
-	it.tDelta = uint64(int64(it.tDelta) + dod)
-	it.t = it.t + int64(it.tDelta)
+	it.tDelta = uint64(int64(it.tDelta) + dod) // 新的时间差
+	it.t = it.t + int64(it.tDelta)             //新的时间
 
 	return it.readValue()
 }
@@ -360,9 +361,9 @@ func (it *xorIterator) readValue() bool {
 	}
 
 	if bit == zero {
-		// it.val = it.val
+		// it.val = it.val， 即数据不变
 	} else {
-		bit, err := it.br.readBit()
+		bit, err := it.br.readBit() //判断数据变化范围
 		if err != nil {
 			it.err = err
 			return false
@@ -371,14 +372,14 @@ func (it *xorIterator) readValue() bool {
 			// reuse leading/trailing zero bits
 			// it.leading, it.trailing = it.leading, it.trailing
 		} else {
-			bits, err := it.br.readBits(5)
+			bits, err := it.br.readBits(5) // leading 为0的位数
 			if err != nil {
 				it.err = err
 				return false
 			}
 			it.leading = uint8(bits)
 
-			bits, err = it.br.readBits(6)
+			bits, err = it.br.readBits(6) //写入的总位数
 			if err != nil {
 				it.err = err
 				return false
@@ -388,7 +389,7 @@ func (it *xorIterator) readValue() bool {
 			if mbits == 0 {
 				mbits = 64
 			}
-			it.trailing = 64 - it.leading - mbits
+			it.trailing = 64 - it.leading - mbits //尾巴为0 的位数
 		}
 
 		mbits := int(64 - it.leading - it.trailing)
@@ -397,8 +398,8 @@ func (it *xorIterator) readValue() bool {
 			it.err = err
 			return false
 		}
-		vbits := math.Float64bits(it.val)
-		vbits ^= (bits << it.trailing)
+		vbits := math.Float64bits(it.val) // 上一个数据转化成字节
+		vbits ^= (bits << it.trailing)    //得到新的数据
 		it.val = math.Float64frombits(vbits)
 	}
 
