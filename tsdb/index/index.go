@@ -56,14 +56,18 @@ type indexWriterSeries struct {
 }
 
 type indexWriterSeriesSlice []*indexWriterSeries
+//一个slice代表series中的一项data？
 
 func (s indexWriterSeriesSlice) Len() int      { return len(s) }
 func (s indexWriterSeriesSlice) Swap(i, j int) { s[i], s[j] = s[j], s[i] }
+//交换两个Series Slice的值
 
 func (s indexWriterSeriesSlice) Less(i, j int) bool {
 	return labels.Compare(s[i].labels, s[j].labels) < 0
+	//比较，如果小于则Compare()值为-1，若相等则为0，i.e 若小于返回True，若相等返回False
 }
 
+//把写入过程分为不同的stage
 type indexWriterStage uint8
 
 const (
@@ -75,6 +79,7 @@ const (
 	idxStageDone
 )
 
+//根据不同的stage返回不同结果
 func (s indexWriterStage) String() string {
 	switch s {
 	case idxStageNone:
@@ -101,6 +106,7 @@ var castagnoliTable *crc32.Table
 func init() {
 	castagnoliTable = crc32.MakeTable(crc32.Castagnoli)
 }
+//初始化用作hash的table
 
 // newCRC32 initializes a CRC32 hash with a preconfigured polynomial, so the
 // polynomial may be easily changed in one location at a later time, if necessary.
@@ -111,9 +117,9 @@ func newCRC32() hash.Hash32 {
 // Writer implements the IndexWriter interface for the standard
 // serialization format.
 type Writer struct {
-	f    *os.File
-	fbuf *bufio.Writer
-	pos  uint64
+	f    *os.File //文件名
+	fbuf *bufio.Writer //指向另一writer的pointer
+	pos  uint64 //
 
 	toc   TOC
 	stage indexWriterStage
@@ -127,6 +133,7 @@ type Writer struct {
 	seriesOffsets map[uint64]uint64     // offsets of series
 	labelIndexes  []labelIndexHashEntry // label index offsets
 	postings      []postingsHashEntry   // postings lists offsets
+	//对应的hash值？
 
 	// Hold last series to validate that clients insert new series in order.
 	lastSeries labels.Labels
@@ -151,14 +158,20 @@ func NewTOCFromByteSlice(bs ByteSlice) (*TOC, error) {
 	if bs.Len() < indexTOCLen {
 		return nil, encoding.ErrInvalidSize
 	}
+	//首先保证bs的长度大于TOC
 	b := bs.Range(bs.Len()-indexTOCLen, bs.Len())
+	//b是范围在bslen-TOClen到bslen的bs，长度为TOClen
+
 
 	expCRC := binary.BigEndian.Uint32(b[len(b)-4:])
+	//大端序存储
 	d := encoding.Decbuf{B: b[:len(b)-4]}
+	//在临时存储中记录编码
 
 	if d.Crc32(castagnoliTable) != expCRC {
 		return nil, errors.Wrap(encoding.ErrInvalidChecksum, "read TOC")
 	}
+	//验证d的hash值是否一致
 
 	if err := d.Err(); err != nil {
 		return nil, err
@@ -172,11 +185,12 @@ func NewTOCFromByteSlice(bs ByteSlice) (*TOC, error) {
 		Postings:          d.Be64(),
 		PostingsTable:     d.Be64(),
 	}, nil
+	//返回新的TOC
 }
 
 // NewWriter returns a new Writer to the given filename. It serializes data in format version 2.
 func NewWriter(fn string) (*Writer, error) {
-	dir := filepath.Dir(fn)
+	dir := filepath.Dir(fn) //文件路径
 
 	df, err := fileutil.OpenDir(dir)
 	if err != nil {
@@ -187,6 +201,7 @@ func NewWriter(fn string) (*Writer, error) {
 	if err := os.RemoveAll(fn); err != nil {
 		return nil, errors.Wrap(err, "remove any existing index at path")
 	}
+	//清理路径中的亟存文件
 
 	f, err := os.OpenFile(fn, os.O_CREATE|os.O_WRONLY, 0666)
 	if err != nil {
@@ -195,6 +210,7 @@ func NewWriter(fn string) (*Writer, error) {
 	if err := df.Sync(); err != nil {
 		return nil, errors.Wrap(err, "sync dir")
 	}
+	//打开文件
 
 	iw := &Writer{
 		f:     f,
@@ -215,6 +231,7 @@ func NewWriter(fn string) (*Writer, error) {
 	if err := iw.writeMeta(); err != nil {
 		return nil, err
 	}
+	// 和Writer的结构一样
 	return iw, nil
 }
 
@@ -225,6 +242,7 @@ func (w *Writer) write(bufs ...[]byte) error {
 		if err != nil {
 			return err
 		}
+		// 计算出writer的position的最大值，即index file的文件大小
 		// For now the index file must not grow beyond 64GiB. Some of the fixed-sized
 		// offset references in v1 are only 4 bytes large.
 		// Once we move to compressed/varint representations in those areas, this limitation
@@ -239,11 +257,15 @@ func (w *Writer) write(bufs ...[]byte) error {
 // addPadding adds zero byte padding until the file size is a multiple size.
 func (w *Writer) addPadding(size int) error {
 	p := w.pos % uint64(size)
+	//是否是64位大小的倍数
 	if p == 0 {
 		return nil
 	}
+	//如果是
 	p = uint64(size) - p
+	//如果不是，p变为应该补上的值
 	return errors.Wrap(w.write(make([]byte, p)), "add padding")
+	//写入0字节的padding补上
 }
 
 // ensureStage handles transitions between write stages and ensures that IndexWriter
@@ -289,6 +311,7 @@ func (w *Writer) ensureStage(s indexWriterStage) error {
 
 func (w *Writer) writeMeta() error {
 	w.buf1.Reset()
+	//重置buf1临时内存
 	w.buf1.PutBE32(MagicIndex)
 	w.buf1.PutByte(FormatV2)
 
@@ -297,38 +320,49 @@ func (w *Writer) writeMeta() error {
 
 // AddSeries adds the series one at a time along with its chunks.
 func (w *Writer) AddSeries(ref uint64, lset labels.Labels, chunks ...chunks.Meta) error {
+	// 确认writer是否在正确的stage写入
 	if err := w.ensureStage(idxStageSeries); err != nil {
 		return err
 	}
+	// 确保写入的series在上一个series的后面，按label set字母排序
 	if labels.Compare(lset, w.lastSeries) <= 0 {
+		// 如果不是，返回不正确的label set的name?
 		return errors.Errorf("out-of-order series added with label set %q", lset)
 	}
-
+	// 確保沒有重復的series被加入，ok是什麼？
 	if _, ok := w.seriesOffsets[ref]; ok {
 		return errors.Errorf("series with reference %d already added", ref)
 	}
 	// We add padding to 16 bytes to increase the addressable space we get through 4 byte
 	// series references.
+	// series references是4 bytes，增加padding到16bytes
 	if err := w.addPadding(16); err != nil {
 		return errors.Errorf("failed to write padding bytes: %v", err)
 	}
-
+	// 確保一個series加入後writer已寫入內容的大小仍爲16倍數
 	if w.pos%16 != 0 {
 		return errors.Errorf("series write not 16-byte aligned at %d", w.pos)
 	}
+	// pos/16即每個series的位置
 	w.seriesOffsets[ref] = w.pos / 16
 
+	// 重置緩存，寫入series的len
 	w.buf2.Reset()
 	w.buf2.PutUvarint(len(lset))
 
+
 	for _, l := range lset {
 		// here we have an index for the symbol file if v2, otherwise it's an offset
+		// 獲取symbol table中的label name
 		index, ok := w.symbols[l.Name]
+		// 若不存在報錯
 		if !ok {
 			return errors.Errorf("symbol entry for %q does not exist", l.Name)
 		}
+		// 錄入label name
 		w.buf2.PutUvarint32(index)
 
+		// 錄入label value
 		index, ok = w.symbols[l.Value]
 		if !ok {
 			return errors.Errorf("symbol entry for %q does not exist", l.Value)
@@ -336,16 +370,22 @@ func (w *Writer) AddSeries(ref uint64, lset labels.Labels, chunks ...chunks.Meta
 		w.buf2.PutUvarint32(index)
 	}
 
+	// 寫入chunk count
 	w.buf2.PutUvarint(len(chunks))
 
+
+	// ?爲什麼存差值
 	if len(chunks) > 0 {
+		// 針對第一個chunk
 		c := chunks[0]
+		// MinTime即第一個chunk中最先錄入的時間，分開的原因是第一個chunk的t0爲0
 		w.buf2.PutVarint64(c.MinTime)
 		w.buf2.PutUvarint64(uint64(c.MaxTime - c.MinTime))
 		w.buf2.PutUvarint64(c.Ref)
 		t0 := c.MaxTime
 		ref0 := int64(c.Ref)
 
+		// 從第二個往後的chunk
 		for _, c := range chunks[1:] {
 			w.buf2.PutUvarint64(uint64(c.MinTime - t0))
 			w.buf2.PutUvarint64(uint64(c.MaxTime - c.MinTime))
@@ -356,15 +396,19 @@ func (w *Writer) AddSeries(ref uint64, lset labels.Labels, chunks ...chunks.Meta
 		}
 	}
 
+	// 重置buf1
 	w.buf1.Reset()
+	// 寫入buf2的長度
 	w.buf1.PutUvarint(w.buf2.Len())
 
+	// 寫入hash table
 	w.buf2.PutHash(w.crc32)
 
+	// ？
 	if err := w.write(w.buf1.Get(), w.buf2.Get()); err != nil {
 		return errors.Wrap(err, "write series data")
 	}
-
+	// 記錄最後一個series的label set
 	w.lastSeries = append(w.lastSeries[:0], lset...)
 
 	return nil
@@ -377,23 +421,31 @@ func (w *Writer) AddSymbols(sym map[string]struct{}) error {
 	// Generate sorted list of strings we will store as reference table.
 	symbols := make([]string, 0, len(sym))
 
+	// 把不同label set對應的string儲存到symbols的list
 	for s := range sym {
 		symbols = append(symbols, s)
 	}
+
+	// 排序
 	sort.Strings(symbols)
 
+	// 重置緩存
 	w.buf1.Reset()
 	w.buf2.Reset()
 
+	// 寫入symbol的長度
 	w.buf2.PutBE32int(len(symbols))
 
+	// 把w.symbol map到psymbol list
 	w.symbols = make(map[string]uint32, len(symbols))
 
+	// 逐項寫入symbol對應的string
 	for index, s := range symbols {
 		w.symbols[s] = uint32(index)
 		w.buf2.PutUvarintStr(s)
 	}
 
+	// buf1寫入buf2長度(不包括hash table)，並buf2寫入hash table
 	w.buf1.PutBE32int(w.buf2.Len())
 	w.buf2.PutHash(w.crc32)
 
@@ -402,6 +454,7 @@ func (w *Writer) AddSymbols(sym map[string]struct{}) error {
 }
 
 func (w *Writer) WriteLabelIndex(names []string, values []string) error {
+	// 若label name和value數量不匹配，報錯
 	if len(values)%len(names) != 0 {
 		return errors.Errorf("invalid value list length %d for %d names", len(values), len(names))
 	}
@@ -409,6 +462,7 @@ func (w *Writer) WriteLabelIndex(names []string, values []string) error {
 		return errors.Wrap(err, "ensure stage")
 	}
 
+	// 把label value寫入valt並排序
 	valt, err := NewStringTuples(values, len(names))
 	if err != nil {
 		return err
@@ -420,16 +474,19 @@ func (w *Writer) WriteLabelIndex(names []string, values []string) error {
 		return err
 	}
 
+	// 通過key在hash中找到name對應的offset並寫入label index的list
 	w.labelIndexes = append(w.labelIndexes, labelIndexHashEntry{
 		keys:   names,
 		offset: w.pos,
 	})
 
+	// 寫入#names，#entries
 	w.buf2.Reset()
 	w.buf2.PutBE32int(len(names))
 	w.buf2.PutBE32int(valt.Len())
 
 	// here we have an index for the symbol file if v2, otherwise it's an offset
+	// 爲每項entry寫入對應的label value
 	for _, v := range valt.entries {
 		index, ok := w.symbols[v]
 		if !ok {
@@ -450,8 +507,10 @@ func (w *Writer) WriteLabelIndex(names []string, values []string) error {
 // writeLabelIndexesOffsetTable writes the label indices offset table.
 func (w *Writer) writeLabelIndexesOffsetTable() error {
 	w.buf2.Reset()
+	// 寫入#entry
 	w.buf2.PutBE32int(len(w.labelIndexes))
 
+	// 寫入label name的長度及其本身
 	for _, e := range w.labelIndexes {
 		w.buf2.PutUvarint(len(e.keys))
 		for _, k := range e.keys {
@@ -473,7 +532,9 @@ func (w *Writer) writePostingsOffsetTable() error {
 	w.buf2.PutBE32int(len(w.postings))
 
 	for _, e := range w.postings {
+		// n = 2
 		w.buf2.PutUvarint(2)
+		// label name, value和指向series的offset
 		w.buf2.PutUvarintStr(e.name)
 		w.buf2.PutUvarintStr(e.value)
 		w.buf2.PutUvarint64(e.offset)
@@ -486,6 +547,7 @@ func (w *Writer) writePostingsOffsetTable() error {
 	return w.write(w.buf1.Get(), w.buf2.Get())
 }
 
+// 每個ref有8 bytes，hash有4bytes
 const indexTOCLen = 6*8 + 4
 
 func (w *Writer) writeTOC() error {
@@ -513,6 +575,7 @@ func (w *Writer) WritePostings(name, value string, it Postings) error {
 		return err
 	}
 
+	//寫入entries
 	w.postings = append(w.postings, postingsHashEntry{
 		name:   name,
 		value:  value,
@@ -522,13 +585,16 @@ func (w *Writer) WritePostings(name, value string, it Postings) error {
 	// Order of the references in the postings list does not imply order
 	// of the series references within the persisted block they are mapped to.
 	// We have to sort the new references again.
+	// 記錄map到series的offsets
 	refs := w.uint32s[:0]
 
 	for it.Next() {
 		offset, ok := w.seriesOffsets[it.At()]
+		// 若offset的series不存在
 		if !ok {
 			return errors.Errorf("%p series for reference %d not found", w, it.At())
 		}
+		// ?
 		if offset > (1<<32)-1 {
 			return errors.Errorf("series offset %d exceeds 4 bytes", offset)
 		}
@@ -556,12 +622,14 @@ func (w *Writer) WritePostings(name, value string, it Postings) error {
 	return errors.Wrap(err, "write postings")
 }
 
+// 這個type是什麼？
 type uint32slice []uint32
 
 func (s uint32slice) Len() int           { return len(s) }
 func (s uint32slice) Swap(i, j int)      { s[i], s[j] = s[j], s[i] }
 func (s uint32slice) Less(i, j int) bool { return s[i] < s[j] }
 
+// label index offset table以及postings offset table有用到
 type labelIndexHashEntry struct {
 	keys   []string
 	offset uint64
@@ -572,6 +640,7 @@ type postingsHashEntry struct {
 	offset      uint64
 }
 
+// 結束writer
 func (w *Writer) Close() error {
 	if err := w.ensureStage(idxStageDone); err != nil {
 		return err
@@ -586,6 +655,7 @@ func (w *Writer) Close() error {
 }
 
 // StringTuples provides access to a sorted list of string tuples.
+// 這是啥？
 type StringTuples interface {
 	// Total number of tuples in the list.
 	Len() int
@@ -624,6 +694,7 @@ type ByteSlice interface {
 	Range(start, end int) []byte
 }
 
+// 具象化
 type realByteSlice []byte
 
 func (b realByteSlice) Len() int {
@@ -640,17 +711,21 @@ func (b realByteSlice) Sub(start, end int) ByteSlice {
 
 // NewReader returns a new index reader on the given byte slice. It automatically
 // handles different format versions.
+// 給定byteslice返回reader
 func NewReader(b ByteSlice) (*Reader, error) {
 	return newReader(b, ioutil.NopCloser(nil))
 }
 
 // NewFileReader returns a new index reader against the given index file.
+// 給定index file返回reader
 func NewFileReader(path string) (*Reader, error) {
+	// 打開文件
 	f, err := fileutil.OpenMmapFile(path)
 	if err != nil {
 		return nil, err
 	}
 	r, err := newReader(realByteSlice(f.Bytes()), f)
+	// 如果報錯，merr？關閉文件
 	if err != nil {
 		var merr tsdb_errors.MultiError
 		merr.Add(err)
@@ -670,23 +745,29 @@ func newReader(b ByteSlice, c io.Closer) (*Reader, error) {
 	}
 
 	// Verify header.
+	// 檢測長度
 	if r.b.Len() < HeaderLen {
 		return nil, errors.Wrap(encoding.ErrInvalidSize, "index header")
 	}
+	// 檢測magic index
 	if m := binary.BigEndian.Uint32(r.b.Range(0, 4)); m != MagicIndex {
 		return nil, errors.Errorf("invalid magic number %x", m)
 	}
+	// version是範圍在4-5中間的第一個byteslice
 	r.version = int(r.b.Range(4, 5)[0])
 
+	// 檢測version
 	if r.version != FormatV1 && r.version != FormatV2 {
 		return nil, errors.Errorf("unknown index file version %d", r.version)
 	}
 
+	// 讀取的TOC
 	toc, err := NewTOCFromByteSlice(b)
 	if err != nil {
 		return nil, errors.Wrap(err, "read TOC")
 	}
 
+	// 把byteslice和相應的symbol version分別讀入V1，V2
 	r.symbolsV2, r.symbolsV1, err = ReadSymbols(r.b, r.version, int(toc.Symbols))
 	if err != nil {
 		return nil, errors.Wrap(err, "read symbols")
@@ -695,6 +776,7 @@ func newReader(b ByteSlice, c io.Closer) (*Reader, error) {
 	// Use the strings already allocated by symbols, rather than
 	// re-allocating them again below.
 	// Additionally, calculate symbolsTableSize.
+	// 被symbol allocate過的string，label pair？V1和V2是什麼？
 	allocatedSymbols := make(map[string]string, len(r.symbolsV1)+len(r.symbolsV2))
 	for _, s := range r.symbolsV1 {
 		r.symbolsTableSize += uint64(len(s) + 8)
@@ -706,18 +788,22 @@ func newReader(b ByteSlice, c io.Closer) (*Reader, error) {
 	}
 
 	if err := ReadOffsetTable(r.b, toc.LabelIndicesTable, func(key []string, off uint64) error {
+		// key的長度必須爲1
 		if len(key) != 1 {
 			return errors.Errorf("unexpected key length for label indices table %d", len(key))
 		}
 
+		// 第一個被分配的symbol的label爲off？
 		r.labels[allocatedSymbols[key[0]]] = off
 		return nil
 	}); err != nil {
 		return nil, errors.Wrap(err, "read label index table")
 	}
 
+	
 	r.postings[""] = map[string]uint64{}
 	if err := ReadOffsetTable(r.b, toc.PostingsTable, func(key []string, off uint64) error {
+		
 		if len(key) != 2 {
 			return errors.Errorf("unexpected key length for posting table %d", len(key))
 		}

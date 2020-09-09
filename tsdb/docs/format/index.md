@@ -3,7 +3,7 @@ label <-> series -> data
 # Index Disk Format
 
 The following describes the format of the `index` file found in each block directory.
-It is terminated by a table of contents which serves as an entry point into the index.
+It is terminated by a table of contents which serves as an entry point into the index. ASB
 
 ```
 ┌────────────────────────────┬─────────────────────┐
