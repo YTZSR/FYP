@@ -41,7 +41,7 @@ Most of the sections described below start with a `len` field. It always specifi
 
 
 ### Symbol Table(label name & value) 
-所有出现过的label 的名字和值(pair)， 每个均有唯一ID（即顺序索引），存储时只需记录ID
+所有出现过的label 的名字和值， 每个均有唯一ID（即顺序索引），存储时只需记录ID
 
 The symbol table holds a sorted list of deduplicated strings that occurred in label pairs of the stored series. They can be referenced from subsequent sections and significantly reduce the total index size.
 
@@ -65,7 +65,7 @@ Strings are referenced by sequential indexing. The strings are sorted in lexicog
 ```
 
 
-### Series(series -> label name & data)
+### Series(series -> label name & value)
 当前block有哪些series(名字)以及对应有哪些label（ID），数据在哪些chunk中
 content： label数量，所有label在symbol table中的索引ID，chunks数量， 每个chunk有sample的时间范围，对应的ref
 ID都固定为 `offset/16`
@@ -129,7 +129,7 @@ After the labels, the number of indexed chunks is encoded, followed by a sequenc
 
 
 
-### Label Index (label name -> label value)
+### Label Index (label value)
 对label的值进行索引
 label name总数， entries总数*(record总数， 为label的值)
 A label index section indexes the existing (combined) values for one or more label names.
