@@ -56,15 +56,15 @@ type TombstoneReader interface {
 
 func writeTombstoneFile(logger log.Logger, dir string, tr TombstoneReader) (int64, error) {
 	path := filepath.Join(dir, tombstoneFilename)
-	tmp := path + ".tmp"
+	tmp := path + ".tmp" // 临时文件
 	hash := newCRC32()
 	var size int
 
-	f, err := os.Create(tmp)
+	f, err := os.Create(tmp) // 建立临时文件
 	if err != nil {
 		return 0, err
 	}
-	defer func() {
+	defer func() { //整个func运行到最后再运行，确保一定会运行
 		if f != nil {
 			if err := f.Close(); err != nil {
 				level.Error(logger).Log("msg", "close tmp file", "err", err.Error())
@@ -80,13 +80,13 @@ func writeTombstoneFile(logger log.Logger, dir string, tr TombstoneReader) (int6
 	// Write the meta.
 	buf.PutBE32(MagicTombstone)
 	buf.PutByte(tombstoneFormatV1)
-	n, err := f.Write(buf.Get())
+	n, err := f.Write(buf.Get()) // 写入开头的五个字节
 	if err != nil {
 		return 0, err
 	}
 	size += n
 
-	mw := io.MultiWriter(f, hash)
+	mw := io.MultiWriter(f, hash) // 同时写入文件和哈希函数
 
 	if err := tr.Iter(func(ref uint64, ivs Intervals) error {
 		for _, iv := range ivs {
@@ -96,7 +96,7 @@ func writeTombstoneFile(logger log.Logger, dir string, tr TombstoneReader) (int6
 			buf.PutVarint64(iv.Mint)
 			buf.PutVarint64(iv.Maxt)
 
-			n, err = mw.Write(buf.Get())
+			n, err = mw.Write(buf.Get()) //写入ref 和时间区间
 			if err != nil {
 				return err
 			}
@@ -107,7 +107,7 @@ func writeTombstoneFile(logger log.Logger, dir string, tr TombstoneReader) (int6
 		return 0, fmt.Errorf("error writing tombstones: %v", err)
 	}
 
-	n, err = f.Write(hash.Sum(nil))
+	n, err = f.Write(hash.Sum(nil)) // 写入hash value
 	if err != nil {
 		return 0, err
 	}
@@ -123,7 +123,7 @@ func writeTombstoneFile(logger log.Logger, dir string, tr TombstoneReader) (int6
 		return 0, err
 	}
 	f = nil
-	return int64(size), fileutil.Replace(tmp, path)
+	return int64(size), fileutil.Replace(tmp, path) //从临时文件转移
 }
 
 // Stone holds the information on the posting and time-range
@@ -141,12 +141,12 @@ func readTombstones(dir string) (TombstoneReader, int64, error) {
 		return nil, 0, err
 	}
 
-	if len(b) < 5 {
+	if len(b) < 5 { // 大小不够header
 		return nil, 0, errors.Wrap(encoding.ErrInvalidSize, "tombstones header")
 	}
 
-	d := &encoding.Decbuf{B: b[:len(b)-4]} // 4 for the checksum.
-	if mg := d.Be32(); mg != MagicTombstone {
+	d := &encoding.Decbuf{B: b[:len(b)-4]}    // 4 for the checksum.
+	if mg := d.Be32(); mg != MagicTombstone { // check header
 		return nil, 0, fmt.Errorf("invalid magic number %x", mg)
 	}
 	if flag := d.Byte(); flag != tombstoneFormatV1 {
@@ -162,7 +162,7 @@ func readTombstones(dir string) (TombstoneReader, int64, error) {
 	if _, err := hash.Write(d.Get()); err != nil {
 		return nil, 0, errors.Wrap(err, "write to hash")
 	}
-	if binary.BigEndian.Uint32(b[len(b)-4:]) != hash.Sum32() {
+	if binary.BigEndian.Uint32(b[len(b)-4:]) != hash.Sum32() { // 检查数据是否被改动
 		return nil, 0, errors.New("checksum did not match")
 	}
 
@@ -182,9 +182,9 @@ func readTombstones(dir string) (TombstoneReader, int64, error) {
 	return stonesMap, int64(len(b)), nil
 }
 
-type memTombstones struct {
+type memTombstones struct { //缓存tombstone信息
 	intvlGroups map[uint64]Intervals
-	mtx         sync.RWMutex
+	mtx         sync.RWMutex //读写锁，基于Mutex实现
 }
 
 // newMemTombstones creates new in memory TombstoneReader

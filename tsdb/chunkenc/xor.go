@@ -253,7 +253,7 @@ func (it *xorIterator) Reset(b []byte) {
 	// The first 2 bytes contain chunk headers.
 	// We skip that for actual samples.
 	it.br = newBReader(b[2:])
-	it.numTotal = binary.BigEndian.Uint16(b)
+	it.numTotal = binary.BigEndian.Uint16(b) //前两个字节为总数
 
 	it.numRead = 0
 	it.t = 0

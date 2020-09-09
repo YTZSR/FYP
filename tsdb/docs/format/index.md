@@ -162,7 +162,7 @@ For instance, a single label name with 4 different values will be encoded as:
 
 The sequence of label index sections is finalized by a [label offset table](#label-offset-table) containing label offset entries that points to the beginning of each label index section for a given label name.
 
-### Postings
+### Postings (label -> series)
 从 posting offset table 来， 为某个label pair 所对应的series的ref， 目标为上方的series
 Postings sections store monotonically increasing lists of series references that contain a given label pair associated with the list.
 
