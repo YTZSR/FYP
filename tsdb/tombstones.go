@@ -184,7 +184,7 @@ func readTombstones(dir string) (TombstoneReader, int64, error) {
 
 type memTombstones struct { //缓存tombstone信息
 	intvlGroups map[uint64]Intervals
-	mtx         sync.RWMutex //读写锁，基于Mutex实现
+	mtx         sync.RWMutex //读写锁，基于Mutex实现, 有写锁不可以加载读锁
 }
 
 // newMemTombstones creates new in memory TombstoneReader
@@ -194,13 +194,13 @@ func newMemTombstones() *memTombstones {
 }
 
 func (t *memTombstones) Get(ref uint64) (Intervals, error) {
-	t.mtx.RLock()
+	t.mtx.RLock() // 加入读锁
 	defer t.mtx.RUnlock()
 	return t.intvlGroups[ref], nil
 }
 
 func (t *memTombstones) Iter(f func(uint64, Intervals) error) error {
-	t.mtx.RLock()
+	t.mtx.RLock() // 加入读锁
 	defer t.mtx.RUnlock()
 	for ref, ivs := range t.intvlGroups {
 		if err := f(ref, ivs); err != nil {
@@ -210,7 +210,7 @@ func (t *memTombstones) Iter(f func(uint64, Intervals) error) error {
 	return nil
 }
 
-func (t *memTombstones) Total() uint64 {
+func (t *memTombstones) Total() uint64 { //空间大小
 	t.mtx.RLock()
 	defer t.mtx.RUnlock()
 
@@ -223,7 +223,7 @@ func (t *memTombstones) Total() uint64 {
 
 // addInterval to an existing memTombstones
 func (t *memTombstones) addInterval(ref uint64, itvs ...Interval) {
-	t.mtx.Lock()
+	t.mtx.Lock() //加入写锁
 	defer t.mtx.Unlock()
 	for _, itv := range itvs {
 		t.intvlGroups[ref] = t.intvlGroups[ref].add(itv)

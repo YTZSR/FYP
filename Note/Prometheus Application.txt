@@ -32,6 +32,14 @@ Components:
     job: a collection of instances
     (当Prometheus 读取数据时会自动加入一些标签，e.g. job, instance用于分辨定位)
 
+Charteristics:
+    系统主要以写入为主
+    写入资料时是依序新增，并且大多数时间做资料排序
+    不会频繁更新资料，且写入时间通常非常短，约几秒内完成
+    资料以区块为单位进行删除，很少单除某时间的资料
+    读取一般以升幂或降幂做循序读取
+    支援高并行与丛集式
+
 Advantages:
     Work well for purely numeric TSD
     machine-centric monitoring & monitoring of highly dynamic service-oriented architectures
@@ -129,11 +137,10 @@ Links:
 4. GO function vs method: https://www.flysnow.org/2017/03/31/go-in-action-go-method.html
 5. Big Endian: https://songlee24.github.io/2015/05/02/endianess/
 6. Go Binary: https://cloud.tencent.com/developer/news/237949
+7. Prometheus Database: https://zhuanlan.zhihu.com/p/81679767
 
 Questions:
-1. chunks.go: maxLen为什么最开始要加入chunks的数量？虽然不会被存入硬盘但是在判断空间上会产生影响。
-2. chunks.go: seq的作用？ Ref的作用？
-3. bstream.go: 在读取的时候为何尾部的stream不能为空？
+1. chunks.go: maxLen为什么最开始要加入chunks的数量？虽然不会被存入硬盘但是在判断空间上会产生影响。 
 4. 为何要把bstream 和 XORChunk 分开？
 5. index.go: series中maxtime和mintime为何要以差值的方式进行存储？
     readme解释：Holding the time range data in the index allows dropping chunks irrelevant to queried time ranges without accessing them directly.

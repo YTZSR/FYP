@@ -306,7 +306,7 @@ func (w *Writer) WriteChunks(chks ...Meta) error { // chunks 写入
 	for i := range chks {
 		chk := &chks[i]
 
-		chk.Ref = seq | uint64(w.n)
+		chk.Ref = seq | uint64(w.n) // offset
 
 		n := binary.PutUvarint(w.buf[:], uint64(len(chk.Chunk.Bytes())))
 
