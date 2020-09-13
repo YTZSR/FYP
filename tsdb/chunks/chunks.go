@@ -410,7 +410,7 @@ func NewDirReader(dir string, pool chunkenc.Pool) (*Reader, error) {
 	}
 
 	var (
-		bs   []ByteSlice
+		bs   []ByteSlice // 一个ByteSlice为一个segment
 		cs   []io.Closer
 		merr tsdb_errors.MultiError
 	)
@@ -446,8 +446,8 @@ func (s *Reader) Size() int64 {
 // Chunk returns a chunk from a given reference.
 func (s *Reader) Chunk(ref uint64) (chunkenc.Chunk, error) {
 	var (
-		sgmSeq    = int(ref >> 32)
-		sgmOffset = int((ref << 32) >> 32)
+		sgmSeq    = int(ref >> 32)         //前32位为segment的次序
+		sgmOffset = int((ref << 32) >> 32) //后32位为chunk在该segment的位置
 	)
 	if sgmSeq >= len(s.bs) {
 		return nil, errors.Errorf("reference sequence %d out of range", sgmSeq)
@@ -461,13 +461,13 @@ func (s *Reader) Chunk(ref uint64) (chunkenc.Chunk, error) {
 	// over the end of the slice.
 	chk := chkS.Range(sgmOffset, sgmOffset+binary.MaxVarintLen32)
 
-	chkLen, n := binary.Uvarint(chk)
+	chkLen, n := binary.Uvarint(chk) // length
 	if n <= 0 {
 		return nil, errors.Errorf("reading chunk length failed with %d", n)
 	}
 	chk = chkS.Range(sgmOffset+n, sgmOffset+n+1+int(chkLen))
 
-	return s.pool.Get(chunkenc.Encoding(chk[0]), chk[1:1+chkLen])
+	return s.pool.Get(chunkenc.Encoding(chk[0]), chk[1:1+chkLen]) //无crc32
 }
 
 func nextSequenceFile(dir string) (string, int, error) {
