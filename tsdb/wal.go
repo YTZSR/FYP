@@ -174,7 +174,7 @@ type SegmentWAL struct {
 	cur   *bufio.Writer
 	curN  int64
 
-	stopc   chan struct{}
+	stopc   chan struct{} // channel
 	donec   chan struct{}
 	actorc  chan func() error // sequentialized background operations
 	buffers sync.Pool
@@ -183,7 +183,7 @@ type SegmentWAL struct {
 // OpenSegmentWAL opens or creates a write ahead log in the given directory.
 // The WAL must be read completely before new data is written.
 func OpenSegmentWAL(dir string, logger log.Logger, flushInterval time.Duration, r prometheus.Registerer) (*SegmentWAL, error) {
-	if err := os.MkdirAll(dir, 0777); err != nil {
+	if err := os.MkdirAll(dir, 0777); err != nil { //建立文件夹
 		return nil, err
 	}
 	df, err := fileutil.OpenDir(dir)

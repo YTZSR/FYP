@@ -31,10 +31,10 @@ import (
 // time range.
 type Querier interface {
 	// Select returns a set of series that matches the given label matchers.
-	Select(...labels.Matcher) (SeriesSet, error)
+	Select(...labels.Matcher) (SeriesSet, error) // 通过label找到具体数据
 
 	// LabelValues returns all potential values for a label name.
-	LabelValues(string) ([]string, error)
+	LabelValues(string) ([]string, error) // label name 找到对应的label value
 
 	// LabelValuesFor returns all potential values for a label name.
 	// under the constraint of another label.
@@ -66,7 +66,7 @@ func (q *querier) LabelValues(n string) ([]string, error) {
 	return q.lvals(q.blocks, n)
 }
 
-// LabelNames returns all the unique label names present querier blocks.
+// LabelNames returns all the unique label names present querier blocks. 从query中提取label name
 func (q *querier) LabelNames() ([]string, error) {
 	labelNamesMap := make(map[string]struct{})
 	for _, b := range q.blocks {
@@ -88,15 +88,16 @@ func (q *querier) LabelNames() ([]string, error) {
 	return labelNames, nil
 }
 
+// label values
 func (q *querier) lvals(qs []Querier, n string) ([]string, error) {
 	if len(qs) == 0 {
 		return nil, nil
 	}
 	if len(qs) == 1 {
-		return qs[0].LabelValues(n)
+		return qs[0].LabelValues(n) //并非楼上的LabelValues(对应的对象不同)
 	}
 	l := len(qs) / 2
-	s1, err := q.lvals(qs[:l], n)
+	s1, err := q.lvals(qs[:l], n) // recursion
 	if err != nil {
 		return nil, err
 	}

@@ -138,6 +138,7 @@ Links:
 5. Big Endian: https://songlee24.github.io/2015/05/02/endianess/
 6. Go Binary: https://cloud.tencent.com/developer/news/237949
 7. Prometheus Database: https://zhuanlan.zhihu.com/p/81679767
+8. Prometheus Data Search: https://blog.csdn.net/Raily_Qi/article/details/99678404
 
 Questions:
 1. chunks.go: maxLen为什么最开始要加入chunks的数量？虽然不会被存入硬盘但是在判断空间上会产生影响。 
@@ -145,3 +146,4 @@ Questions:
 5. index.go: series中maxtime和mintime为何要以差值的方式进行存储？
     readme解释：Holding the time range data in the index allows dropping chunks irrelevant to queried time ranges without accessing them directly.
 6. index.go: label index offset table中找到label value地址如何确定哪组value为自己的？
+7. chunk 中的Encoding 为何要占一整个字节？
