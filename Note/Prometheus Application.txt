@@ -139,6 +139,13 @@ Links:
 6. Go Binary: https://cloud.tencent.com/developer/news/237949
 7. Prometheus Database: https://zhuanlan.zhihu.com/p/81679767
 8. Prometheus Data Search: https://blog.csdn.net/Raily_Qi/article/details/99678404
+9. Prometheus Storage & Index: https://segmentfault.com/a/1190000023242492
+10. Sample Demo of Prometheus: https://www.youtube.com/watch?v=C4YV-9CrawA&ab_channel=Docker
+11. Prometheus Remote Storage (InfluxDB): http://chenzhijun.me/2018/06/09/prometheus-storage-influxdb/
+12. Thanos Official Document: https://thanos.io/
+13. Thanos Structure: https://www.kubernetes.org.cn/7200.html
+14. Go Memory: https://juejin.cn/post/6844903795739082760
+
 
 Questions:
 1. chunks.go: maxLen为什么最开始要加入chunks的数量？虽然不会被存入硬盘但是在判断空间上会产生影响。 
